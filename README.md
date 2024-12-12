@@ -1,4 +1,4 @@
-# Design of multimodal antibiotics against intracellular infections using1 deep learning
+# Design of multimodal antibiotics against intracellular infections using deep learning
 
 Pretrained models for manuscript "Design of multimodal antibiotics against intracellular infections using1 deep learning".
 
