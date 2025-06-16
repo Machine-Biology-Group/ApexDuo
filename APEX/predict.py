@@ -69,7 +69,7 @@ ensemble_num = model_num * repeat_num
 deep_model_list = []
 for a_model_name in model_list:
   for a_en in range(repeat_num):
-    key = 'trained_all_model_'+a_model_name+'_ensemble_'+str(a_en)
+    key = 'trained_all_AC_model_'+a_model_name+'_ensemble_'+str(a_en)
 
     model = torch.load('./trained_models/'+key)
     model.eval()
