@@ -10,3 +10,6 @@ Pretrained models for manuscript "Design of multimodal antibiotics against intra
 (3) Folder CPP_predictor contains our pretrained cell-penetrating peptide predictors. To make your own predictions, replace example_list in line 76 of predict_CPPs.py and run it. Results will be saved in CPP_prediction.csv.
 
 
+## Software version
+pytorch: 1.11.0+cu113
+
