@@ -1,0 +1,41 @@
+# Reproducibility recipe — ApexDuo
+
+Environment: see `environment.yml` / `requirements.txt` (PyTorch 1.11, Python 3.9).
+A CUDA GPU is recommended for steps 1–3.
+
+## 1. Train (or load) the MMD-VAE generator
+```bash
+python MMDVAE/mmdvae_pretrain.py        # trains on UniRef50<=50aa; or use MMDVAE/trainedMMDVAE
+```
+
+## 2. KDE-guided generation
+```bash
+python KDE.py
+# Fits a Gaussian KDE on latent codes of known AMP/CPP peptides, samples ~100M codes,
+# decodes, and keeps valid sequences (~50.8M).
+```
+
+## 3. Score the library
+```bash
+cd APEX && python predict.py            # per-strain MIC -> median MIC
+cd ../CPP_predictor && python predict_CPPs.py   # CPP probability
+```
+
+## 4. Prioritize / select
+Apply, in order: median-MIC filter; CPP filter; length <=30 aa (synthesis constraint);
+de-duplication; removal of peptides present in the training/in-house sets; and a pairwise
+redundancy filter (Striped Smith–Waterman similarity threshold). Rank the survivors by
+median predicted MIC.
+
+## 5. Reproduce the CPP cross-validated AUROC (reviewer request)
+```bash
+cd CPP_predictor
+python CPP_predictor.py -n 3 -d 128 -l 1e-5
+# 5-fold stratified CV on 1,217 CPP / 5,293 non-CPP-or-toxic peptides.
+# Expected: AUROC ~0.95, AUPR ~0.88.
+```
+
+## Notes
+- `torch.load` of the shipped checkpoints: pass `map_location='cpu'` for CPU-only machines,
+  and (on PyTorch >=2.6) `weights_only=False` when loading full pickled model objects.
+- Random seeds are set where applicable; ensemble scores average multiple seeds/architectures.
