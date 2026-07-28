@@ -1,0 +1,128 @@
+# ApexDuo
+
+Deep-learning workflow for designing **dual-activity peptides** that combine
+**antimicrobial (AMP)** and **cell-penetrating (CPP)** properties, used to discover
+the Turingcin peptides against intracellular bacterial infection.
+
+ApexDuo is an *integrated generative-design and dual-criteria prioritization* pipeline
+(not an end-to-end dual-objective generative model): a general peptide generator is
+combined with post-hoc, KDE-guided latent-space enrichment and two downstream predictors
+(AMP and CPP) that jointly prioritize candidates.
+
+---
+
+## 1. Pipeline overview
+
+```
+UniRef50 peptides (<=50 aa)
+        |
+        v
+[1] MMD-VAE generator  ---------------------------------.
+    (learns a general peptide latent space)             |
+        |                                               |
+        v                                               |
+[2] KDE-guided sampling                                 |
+    (KernelDensity fit on latent codes of known         |
+     AMP/CPP peptides; sample ~100M latent codes;        |
+     decode; keep valid sequences -> ~50.8M peptides)    |
+        |                                               |
+        v                                               |
+[3] Scoring & prioritization                            |
+    - APEX  : per-strain MIC ensemble  -> median MIC     |
+    - CPP   : cell-penetration probability ensemble      |
+        |                                               |
+        v                                               |
+[4] Selection filters -> 60 synthesized "Turingcins"    |
+    (median-MIC filter, CPP filter, length <=30,         |
+     de-duplication, novelty vs training/in-house,       |
+     redundancy filter by pairwise similarity)  <--------'
+```
+
+## 2. Repository layout
+
+| Folder / file | Contents |
+|---|---|
+| `MMDVAE/` | MMD-VAE generator: `MMDVAE_model.py`, `MMDVAE_loss.py`, training (`mmdvae_pretrain.py`), sampling (`sampling.py`), and the pretrained checkpoint `trainedMMDVAE`. |
+| `KDE.py` | KDE-guided latent-space sampling and decoding (functional-peptide-enriched generation). |
+| `APEX/` | Antimicrobial (MIC) predictor: `AMP_DL_model_twohead.py`, `predict.py`, `utils.py`, `aaindex1.csv`, `best_key_list`, `trained_models/` (ensemble). |
+| `CPP_predictor/` | Cell-penetrating-peptide predictor: `CPP_model.py`, `CPP_predictor.py` (train + 5-fold CV), `predict_CPPs.py`, `utils.py`, `aaindex1.csv`, `models/` (ensemble), and `cpp_data/` (training data). |
+| `data/` | Datasets and vocabularies (see `DATA_AVAILABILITY.md`). |
+| `requirements.txt`, `environment.yml` | Reproducible environment. |
+
+> This README documents the intended, self-contained release layout. Some artifacts in the
+> original working directories carry historical names; the files above are the canonical ones.
+
+## 3. Installation
+
+**Conda (recommended):**
+```bash
+conda env create -f environment.yml
+conda activate apexduo
+```
+
+**pip / venv:**
+```bash
+python -m venv apexduo && source apexduo/bin/activate
+pip install -r requirements.txt
+# GPU build of PyTorch 1.11 (CUDA 11.3):
+#   pip install torch==1.11.0+cu113 -f https://download.pytorch.org/whl/torch_stable.html
+# CPU-only inference:
+#   pip install torch==1.11.0
+```
+A CUDA-capable GPU is recommended for generation and library-scale scoring; inference on a
+handful of sequences runs on CPU.
+
+## 4. Components and models
+
+### 4.1 MMD-VAE generator
+- Maximum-mean-discrepancy variational autoencoder (InfoVAE-style) over peptide sequences.
+- GRU encoder/decoder with attention; embedding dim 256, hidden dim 256, latent dim 128, 3 layers.
+- Trained on UniRef50 peptides <=50 aa (1,418,011 train / 354,503 validation), learning rate 1e-4.
+- Pretrained weights: `MMDVAE/trainedMMDVAE`.
+
+### 4.2 KDE-guided generation (`KDE.py`)
+- Encode known AMP/CPP ("functional") peptides to latent codes.
+- Fit a Gaussian `sklearn.neighbors.KernelDensity` to those codes.
+- Sample latent codes from the KDE, decode, and keep valid sequences.
+- In the study this produced 50,820,152 valid unique peptides from ~100M sampled codes
+  (reported as "~50 million generated peptides").
+
+### 4.3 APEX antimicrobial predictor
+- Multi-strain MIC regressor (AAindex descriptors -> GRU + attention -> MLP), used as an
+  ensemble (8 architectures x 5 seeds). Per-peptide score = **median predicted MIC** across strains.
+
+### 4.4 CPP predictor
+- Sequence -> AAindex embedding -> bidirectional GRU + attention -> fully-connected head -> sigmoid.
+- Trained on **1,217 CPPs** (CPPsite 2.0, SkipCPP-Pred, MLCPP) and **5,293 non-CPP / toxic**
+  peptides (SATPdb toxic set + curated negatives). Hyperparameters (layers, hidden size,
+  weight decay) selected by mean AUROC under 5-fold cross-validation; final predictor is an
+  ensemble of the top 5 configurations x 5 seeds (25 models).
+- **Five-fold cross-validated performance: AUROC 0.95, AUPR 0.88** (see `REPRODUCIBILITY.md`).
+
+## 5. Usage
+
+**Generate peptides (KDE-guided):**
+```bash
+python KDE.py                     # writes valid generated sequences
+```
+**Score antimicrobial activity (median MIC):**
+```bash
+cd APEX && python predict.py      # reads test_seqs.txt -> Predicted_MICs.csv
+```
+**Score cell penetration:**
+```bash
+cd CPP_predictor && python predict_CPPs.py   # -> CPP_prediction.csv
+```
+**Reproduce the CPP cross-validated AUROC:**
+```bash
+cd CPP_predictor && python CPP_predictor.py -n 3 -d 128 -l 1e-5
+```
+
+## 6. Data and code availability
+See `DATA_AVAILABILITY.md` for dataset sources/accessions and `REPRODUCIBILITY.md` for the
+end-to-end reproduction recipe.
+
+## 7. Citation
+Cesaro A., Wan F., Torres M.D.T., de la Fuente-Nunez C. *Design of dual-activity antibiotics
+using deep learning.* (2025). See the main text for the full reference and the APEX predictor
+reference (Wan et al., *Nat. Biomed. Eng.* 2024).
